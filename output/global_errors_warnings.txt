@@ -1,0 +1,3 @@
+ERROR	Path for "PATHOLOGIC_EXECUTABLE" is NOT set properly in configuration file "/Users/nielshanson/Documents/pycharm/myapp/config/template_config.txt"
+Currently it is set to "/Users/mayab3/pathway-tools/pathway-tools"
+ERROR	script /Users/mayab3/pathway-tools/pathway-tools for PATHOLOGIC_EXECUTABLE not found

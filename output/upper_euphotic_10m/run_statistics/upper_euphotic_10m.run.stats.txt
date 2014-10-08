@@ -1,0 +1,20 @@
+1000	Sequences BEFORE Filtering (nucleotide)	7835
+1001	min length	49
+1002	avg length	955
+1003	max length	2105
+1004	tot length	7482595
+1005	Sequences AFTER Filtering (nucleotide)	7735
+1006	min length	180
+1007	avg length	835
+1008	max length	1654
+1009	tot length	6463720
+2000	Sequences BEFORE Filtering (amino)	11769
+2001	min length	19
+2002	avg length	140
+2003	max length	421
+2004	tot length	1647892
+2005	Sequences AFTER Filtering (amino)	9617
+2006	min length	60
+2007	avg length	161
+2008	max length	421
+2009	tot length	1556239
