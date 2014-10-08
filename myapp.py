@@ -1,5 +1,6 @@
 import os
 import subprocess
+import re
 
 #post-processing code for RainMaker Report integration
 import lib.parse_into_tables as parser
@@ -132,15 +133,99 @@ metapaths_steps:COMPUTE_RPKM skip"""
         exe = subprocess.call( mp2_command )
         if exe != 0 : raise Exception("MetaPathways exited abnormally")
 
+    def getSequencePairs(self, downloaded_files):
+        paired_samples = {}
+        paired_pattern = re.compile("(.+?)\_(R[0-2])\_(.+?)[\.fastq|.fastq\.gz]")
+
+        for file in downloaded_files:
+            if not (file.endswith( ".fastq" ) or \
+                    file.endswith( ".fastq.gz") or \
+                    file.endswith(".fas") ) : continue
+            hits = paired_pattern.search(file)
+            if hits:
+                sample = os.path.basename(hits.group(1)) + "_" + hits.group(3)
+                if sample not in paired_samples:
+                    paired_samples[sample] = {"R1":None, "R2": None}
+                if hits.group(2) == "R1":
+                    print "Found R1 in ", file
+                    paired_samples[sample]["R1"] = file
+                elif hits.group(2) == "R2":
+                    print "Found R2 in ", file
+                    paired_samples[sample]["R2"] = file
+                else:
+                    print "Error: Did not find paired-end pattern for " + sample
+        return paired_samples
+
+    def assemble_samples(self, samples, mp2_parsed_params, paired=False):
+
+        #TODO loop over assembly types
+
+        root = os.path.dirname(os.path.realpath(__file__))
+        spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
+
+        for sample in samples:
+            assemble_out = os.path.join(root, "output", sample, "spades")
+            if not os.path.exists( assemble_out ) :
+                os.makedirs( assemble_out )
+
+            if paired:
+            ## TODO will have to make commands more robust to handle multiple pairs of command
+            ## See: http://spades.bioinf.spbau.ru/release3.0.0/manual.html
+            ## TODO memory limit -m needs to be tweeked for system
+                assemble_command = [ 'python', spades_exe, \
+                                     '-1', samples[sample]["R1"],\
+                                     '-2', samples[sample]["R2"],\
+                                     '--careful',\
+                                     "-m", "250",\
+                                     '-o', assemble_out ]
+            else:
+                assemble_command = [ 'python', spades_exe,\
+                                     '-12', sample,\
+                                     '--careful',\
+                                     "-m", "250",\
+                                     '-o', assemble_out ]
+
+            exe = subprocess.call(assemble_command)
+            if exe != 0 : raise Exception("Assembly exited abnormally")
+
+            # copy resulting contig file
+            # spades_contigs = os.path.join(assemble_out, "contigs.fasta")
+            assemble_contigs = os.path.join(root, "output", sample, "final_contigs", "spades", sample )
+            #if os.path.exists(spades_contigs):
+            #    os.rename(spades_contigs, )
+
+
+        exit()
+
+
     def runApp( self, downloaded_files, app_session = None ) :
         upload_folders = []
         mp2_parsed_params = self.parseMp2Input(app_session)
+
+        paired_samples = self.getSequencePairs(downloaded_files)
+
+        self.assemble_samples(paired_samples, mp2_parsed_params, paired=True)
+
+        # TODO check parameters for paired-end indicator
         self.createMp2ParameterFile(mp2_parsed_params)
+
+
+
+
+
+
+
+
+
+        exit()
+
 
         for file in downloaded_files :
             if not (file.endswith( ".fastq" ) or \
                     file.endswith( ".fastq.gz") or \
                     file.endswith(".fas") ) : continue
+
+
 
             output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output")
             config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config")
