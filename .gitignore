@@ -40,7 +40,10 @@ htmlcov/
 nosetests.xml
 coverage.xml
 
+# mp2 test output
 output/*
+
+
 # Translations
 *.mo
 *.pot
