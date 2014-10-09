@@ -156,25 +156,28 @@ metapaths_steps:COMPUTE_RPKM skip"""
                     print "Error: Did not find paired-end pattern for " + sample
         return paired_samples
 
-    def assemble_samples(self, samples, mp2_parsed_params, paired=False):
-
-        #TODO loop over assembly types
+    def assemble_sample(self, sample, algos, paired = False):
 
         root = os.path.dirname(os.path.realpath(__file__))
-        spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
 
-        for sample in samples:
-            assemble_out = os.path.join(root, "output", sample, "spades")
+        # folder for resulting contigs
+        contigs_folder = os.path.join(root, "output", sample, "assembly", "final_contigs")
+        if not os.path.exists( contigs_folder ):
+            os.makedirs( contigs_folder )
+
+        if "spades" in algos:
+            spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
+            assemble_out = os.path.join(root, "output", sample, "assembly", "spades")
             if not os.path.exists( assemble_out ) :
                 os.makedirs( assemble_out )
 
             if paired:
-            ## TODO will have to make commands more robust to handle multiple pairs of command
-            ## See: http://spades.bioinf.spbau.ru/release3.0.0/manual.html
-            ## TODO memory limit -m needs to be tweeked for system
+                ## TODO will have to make commands more robust to handle multiple pairs of command
+                ## See: http://spades.bioinf.spbau.ru/release3.0.0/manual.html
+                ## TODO memory limit -m needs to be tweeked for system
                 assemble_command = [ 'python', spades_exe, \
-                                     '-1', samples[sample]["R1"],\
-                                     '-2', samples[sample]["R2"],\
+                                     '-1', sample["R1"],\
+                                     '-2', sample["R2"],\
                                      '--careful',\
                                      "-m", "250",\
                                      '-o', assemble_out ]
@@ -185,15 +188,74 @@ metapaths_steps:COMPUTE_RPKM skip"""
                                      "-m", "250",\
                                      '-o', assemble_out ]
 
-            exe = subprocess.call(assemble_command)
-            if exe != 0 : raise Exception("Assembly exited abnormally")
+            ret = subprocess.call(assemble_command)
+            if ret != 0 : raise Exception("Assembly exited abnormally")
 
             # copy resulting contig file
-            # spades_contigs = os.path.join(assemble_out, "contigs.fasta")
-            assemble_contigs = os.path.join(root, "output", sample, "final_contigs", "spades", sample )
-            #if os.path.exists(spades_contigs):
-            #    os.rename(spades_contigs, )
+            spades_contigs = os.path.join(assemble_out, "contigs.fasta")
+            os.rename(spades_contigs, os.path.join(contigs_folder, "spades_contigs.fasta"))
 
+        if "idba-ud" in algos:
+
+            # executables
+            exe = os.path.join(root, "executables", "Unix", "idba-1.1.1", "bin", "idba_ud")
+            fq2fa_exe = os.path.join(root, "executables", "Unix", "idba-1.1.1", "bin", "fq2fa")
+
+            # output folder for results
+            assemble_out = os.path.join(root, "output", sample, "assembly", "idba-ud")
+            if not os.path.exists( assemble_out ) :
+                os.makedirs( assemble_out )
+
+            if paired:
+                ## TODO will have to make commands more robust to handle multiple pairs of command
+                ## See: http://i.cs.hku.hk/~alse/hkubrg/projects/idba_ud/
+
+                # run fq2fa
+                fa_file = "temp.fa"
+                if len(sample) > 1:
+                    # two paired files (left, right)
+                    fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample["R1"],  sample["R2"], fa_file]
+                else:
+                    # interlaced files files
+                    fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample, fa_file]
+                ret = subprocess.call(fq2fa_command)
+                if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
+
+                assemble_command = [ exe,\
+                                     '-r', fa_file,\
+                                     '--pre_correction',\
+                                     '-o', assemble_out ]
+                ret = subprocess.call(assemble_command)
+                if ret != 0 : raise Exception("idba_ud exited abnormally")
+            else:
+                # run fq2fa
+                fa_file = "temp.fa"
+
+                fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample["R1"],  sample["R2"], fa_file]
+                ret = subprocess.call(fq2fa_command)
+                if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
+
+                # non-paired end
+                assemble_command = [ exe,\
+                                     '-r', fa_file,\
+                                     '--pre_correction',\
+                                     '-o', assemble_out ]
+                ret = subprocess.call(assemble_command)
+                if ret != 0 : raise Exception("idba_ud exited abnormally")
+
+            # copy resulting contig file
+            idba_ud_contigs = os.path.join(assemble_out, "contigs.fasta") # TODO fix
+            os.rename(idba_ud_contigs, os.path.join(contigs_folder, "idba_ud_contigs.fasta"))
+
+
+    def assemble_samples(self, samples, mp2_parsed_params, algos=None, paired=False):
+
+        #TODO loop over assembly types
+
+        algos = ["spades", "idba-ud"]
+
+        for sample in samples:
+            self.assemble_sample(sample, algos, paired=True)
 
         exit()
 
