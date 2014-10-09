@@ -111,6 +111,43 @@ class ContextCreator:
       def _Message(self, str):
 
           return '{0: <60}'.format(str)
+      
+      def create_assemble_reads_cmd(self, s):
+          """ ASSEMBLE_READS """
+          contexts = []
+
+          '''inputs'''
+          input_files = s.input_files
+
+          '''outputs'''
+          output_dir = s.assembly_dir + PATHDELIM + s.sample_name
+
+          '''params'''
+          assem_format = self.params.get('assembly','format', default='paired')
+          algos_string = self.params.get('assembly','algorithm', default=None)
+          algos = [x.strip() for x in algos_string.split(",") if len(x)!=0 ]
+
+          context = Context()
+          context.name = 'ASSEMBLE_READS'
+          context.inputs = { 'input_files' : input_files }
+          context.outputs = { 'assembly_dir' : output_dir }
+          
+          context.status = self.params.get('metapaths_steps','ASSEMBLE_READS')
+          
+          pyScript = self.configs.METAPATHWAYS_PATH + self.configs.ASSEMBLE_READS
+          
+          cmd = "%s -i %s -f %s -a %s -o %s"\
+               %( pyScript,\
+                  context.inputs['input_files'],\
+                  assem_format,\
+                  algos,\
+                  context.outputs['assembly_dir']
+                )
+
+          context.message = self._Message("ASSEMBLING READS...")
+          context.commands = [cmd]
+          contexts.append(context)
+          return contexts
 
       def create_quality_check_cmd(self, s):
           """ PREPROCESS_INPUT """

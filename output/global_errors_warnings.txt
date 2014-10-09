@@ -1,4 +1,4 @@
-ERROR	Path for "PATHOLOGIC_EXECUTABLE" is NOT set properly in configuration file "/Users/nielshanson/Documents/pycharm/myapp/config/template_config.txt"
+ERROR	Path for "PATHOLOGIC_EXECUTABLE" is NOT set properly in configuration file "config/template_config.txt"
 Currently it is set to "/Users/mayab3/pathway-tools/pathway-tools"
 ERROR	script /Users/mayab3/pathway-tools/pathway-tools for PATHOLOGIC_EXECUTABLE not found
-ERROR	No input files in the specified folder '/data/input/samples/truseqI1-8899-Name_S12_L001_R1_001.fastq.gz' to process!
+ERROR	No input files in the specified folder '/data/input/samples/' to process!

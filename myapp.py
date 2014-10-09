@@ -1,6 +1,8 @@
 import os
 import subprocess
 import re
+import gzip
+from libs.python_modules.parsers.fastareader import FastaRecord, FastaReader
 
 #post-processing code for RainMaker Report integration
 import lib.parse_into_tables as parser
@@ -135,12 +137,14 @@ metapaths_steps:COMPUTE_RPKM skip"""
 
     def getSequencePairs(self, downloaded_files):
         paired_samples = {}
-        paired_pattern = re.compile("(.+?)\_(R[0-2])\_(.+?)[\.fastq|.fastq\.gz]")
+        paired_pattern = re.compile("(.+?)\_(R[0-2])\_(.+?)[\.fastq|\.fq][\.gz]?")
 
         for file in downloaded_files:
             if not (file.endswith( ".fastq" ) or \
                     file.endswith( ".fastq.gz") or \
-                    file.endswith(".fas") ) : continue
+                    file.endswith(".fas") ) or \
+                    file.endswith(".fq") or \
+                    file.endswith(".fq.gz"): continue
             hits = paired_pattern.search(file)
             if hits:
                 sample = os.path.basename(hits.group(1)) + "_" + hits.group(3)
@@ -155,18 +159,28 @@ metapaths_steps:COMPUTE_RPKM skip"""
                 else:
                     print "Error: Did not find paired-end pattern for " + sample
         return paired_samples
+    
+    def unzip_sample_files(self, sample):
+        for r in sample:
+            if os.path.exists(sample[r]):
+               new_file = sample[r].replace(".gz", "")
+               with gzip.open(sample[r], 'rb') as fh_in:
+                   with open(new_file, 'wb') as fh_out:
+                       fh_out.writelines(fh_in)
+               sample[r] = new_file
+        return sample
 
-    def assemble_sample(self, sample, algos, paired = False):
+    def assemble_sample(self, sample, sample_pairs, algos, paired = False):
 
         root = os.path.dirname(os.path.realpath(__file__))
-
         # folder for resulting contigs
         contigs_folder = os.path.join(root, "output", sample, "assembly", "final_contigs")
         if not os.path.exists( contigs_folder ):
             os.makedirs( contigs_folder )
 
         if "spades" in algos:
-            spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
+# spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
+            spades_exe = os.path.join(root, "executables", "Unix", "SPAdes-3.1.1-Linux", "bin", "spades.py")
             assemble_out = os.path.join(root, "output", sample, "assembly", "spades")
             if not os.path.exists( assemble_out ) :
                 os.makedirs( assemble_out )
@@ -176,18 +190,18 @@ metapaths_steps:COMPUTE_RPKM skip"""
                 ## See: http://spades.bioinf.spbau.ru/release3.0.0/manual.html
                 ## TODO memory limit -m needs to be tweeked for system
                 assemble_command = [ 'python', spades_exe, \
-                                     '-1', sample["R1"],\
-                                     '-2', sample["R2"],\
+                                     '-1', sample_pairs["R1"],\
+                                     '-2', sample_pairs["R2"],\
                                      '--careful',\
-                                     "-m", "250",\
+                                     "-m", "2",\
                                      '-o', assemble_out ]
             else:
                 assemble_command = [ 'python', spades_exe,\
-                                     '-12', sample,\
+                                     '-12', sample_pairs["R1"],\
                                      '--careful',\
-                                     "-m", "250",\
+                                     "-m", "2",\
                                      '-o', assemble_out ]
-
+            
             ret = subprocess.call(assemble_command)
             if ret != 0 : raise Exception("Assembly exited abnormally")
 
@@ -202,60 +216,188 @@ metapaths_steps:COMPUTE_RPKM skip"""
             fq2fa_exe = os.path.join(root, "executables", "Unix", "idba-1.1.1", "bin", "fq2fa")
 
             # output folder for results
+            temp_fasta_file = "temp.fa"
             assemble_out = os.path.join(root, "output", sample, "assembly", "idba-ud")
             if not os.path.exists( assemble_out ) :
                 os.makedirs( assemble_out )
+            
+            def assemble_idba_ud(sample_pairs, paired=False):
+                """
+                    Helper function for to run idba_ud assembly
+                """
+                if paired:
+                    # run fq2fa
+                    if len(sample_pairs) > 1:
+                        # two paired files (left, right)
+                        fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample_pairs["R1"],  sample_pairs["R2"], temp_fasta_file]
+                    else:
+                        # interlaced files files
+                        fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample_pairs["R1"], temp_fasta_file]
+                    ret = subprocess.call(fq2fa_command)
+                    if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
+
+                    assemble_command = [ exe,\
+                                        '-r', temp_fasta_file,\
+                                        '--pre_correction',\
+                                        '-o', assemble_out ]
+                    ret = subprocess.call(assemble_command)
+                    if ret != 0 : raise Exception("idba_ud exited abnormally")
+                else:
+                    if len(sample_pairs) > 1:
+                        # two paired files (left, right)
+                        fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample_pairs["R1"],  sample_pairs["R2"], temp_fasta_file]
+                    else:
+                        # interlaced files
+                        fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample_pairs["R1"], temp_fasta_file]
+                    ret = subprocess.call(fq2fa_command)
+                    if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
+
+                    assemble_command = [ exe,\
+                                        '-r', temp_fasta_file,\
+                                        '--pre_correction',\
+                                        '-o', assemble_out ]
+                    ret = subprocess.call(assemble_command)
+                    if ret != 0 : raise Exception("idba_ud exited abnormally")
 
             if paired:
                 ## TODO will have to make commands more robust to handle multiple pairs of command
                 ## See: http://i.cs.hku.hk/~alse/hkubrg/projects/idba_ud/
-
-                # run fq2fa
-                fa_file = "temp.fa"
-                if len(sample) > 1:
-                    # two paired files (left, right)
-                    fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample["R1"],  sample["R2"], fa_file]
-                else:
-                    # interlaced files files
-                    fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample, fa_file]
-                ret = subprocess.call(fq2fa_command)
-                if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
-
-                assemble_command = [ exe,\
-                                     '-r', fa_file,\
-                                     '--pre_correction',\
-                                     '-o', assemble_out ]
-                ret = subprocess.call(assemble_command)
-                if ret != 0 : raise Exception("idba_ud exited abnormally")
-            else:
-                # run fq2fa
-                fa_file = "temp.fa"
-
-                fq2fa_command = [fq2fa_exe, '--merge', '--filter', sample["R1"],  sample["R2"], fa_file]
-                ret = subprocess.call(fq2fa_command)
-                if ret != 0 : raise Exception("fq2fa_exe exited abnormally")
-
-                # non-paired end
-                assemble_command = [ exe,\
-                                     '-r', fa_file,\
-                                     '--pre_correction',\
-                                     '-o', assemble_out ]
-                ret = subprocess.call(assemble_command)
-                if ret != 0 : raise Exception("idba_ud exited abnormally")
-
+                
+                # check to see if files are .gziped
+                if sample_pairs["R1"].endswith(".gz"):
+                    sample_pairs_unzip = self.unzip_sample_files(sample_pairs)
+                    assemble_idba_ud(sample_pairs_unzip, paired)
+                else: 
+                    assemble_idba_ud(sample_pairs, paired)
+            
+            # remove intermediate files
+            if sample_pairs_unzip:
+               for s in sample_pairs_unzip:
+                   if os.path.exists(sample_pairs_unzip[s]):
+                       os.remove(sample_pairs_unzip[s])
+            os.remove(temp_fasta_file) 
+            
             # copy resulting contig file
-            idba_ud_contigs = os.path.join(assemble_out, "contigs.fasta") # TODO fix
+            idba_ud_contigs = os.path.join(assemble_out, "contig.fa")
             os.rename(idba_ud_contigs, os.path.join(contigs_folder, "idba_ud_contigs.fasta"))
+
+    def getLens(self, filename):
+        """
+        Parses FASTA file using screed to create a sorted list of contig lengths.
+        """
+        lens = []
+        reader = FastaReader(filename)
+        
+        for record in reader:
+            lens.append(len(record.sequence))
+        
+        return sorted(lens) 
+    
+    def nx(self, lens, percent):
+        """
+        Calculates any NXX (e.g. N50, N90) statistic.
+        """
+        
+        lenSum = sum(lens)
+        threshold = (float(percent) / 100) * lenSum
+        
+        runningSum = 0
+        nxx = 0
+        nxxLen = 0
+
+        for i in range(len(lens)-1, -1, -1):
+            myLen = lens[i]
+            nxx += 1
+            runningSum += myLen
+
+            if runningSum >= threshold:
+                nxxLen = myLen
+                break
+
+        return nxx, nxxLen
+
+    def compute_assembly_statistics(self, paired_samples, min_length=20):
+        
+        # write the headers
+        header_nx = "Sample\tAssembler\tN_x\tvalue\n"
+        header = "Sample\tAssembler\tN\tN_trimmed\tTotal_Length\tMin\tMedian\tMean\tMax\tN50\tN90\tNx_AUC\n"
+        root = os.path.dirname(os.path.realpath(__file__))
+
+        for sample in paired_samples:
+            # output
+            contigs_folder = os.path.join(root, "output", sample, "assembly", "final_contigs") 
+            file_list = os.listdir(contigs_folder)
+            nx_stats_out = open(os.path.join(contigs_folder, "assembly_stats_nx.txt"),"w")
+            stats_out = open(os.path.join(contigs_folder, "assembly_stats.txt"),"w")
+            nx_stats_out.write(header_nx)
+            stats_out.write(header)
+    
+            for f in file_list:
+                algo = "a1"
+                hits = re.search("(.*)\_contigs\.fasta",f)
+
+                if hits:
+                   algo = hits.group(1)
+                lens = self.getLens(os.path.join(contigs_folder, f))
+                trimmedLens = self.trimLens(lens, min_length)
+                
+                if len(trimmedLens) == 0:
+                    print f + ": no sequences longer than threshold"
+                
+                statN = len(lens)
+                statTrimmedN = len(trimmedLens)
+                statSum = sum(trimmedLens)
+                statMax = max(trimmedLens)
+                statMin = min(trimmedLens)
+                statMed = trimmedLens[ (len(trimmedLens)-1) / 2 ]
+                statMean = int( statSum / float(statTrimmedN) )
+                statnxs = []
+                statnx_lens = []
+                
+                for n in range(5,96,5):
+                    statnx, statnx_len = self.nx(trimmedLens, n)
+                    statnxs.append( str(n))
+                    statnx_lens.append(statnx_len)
+                    
+                    if n == 50:
+                        stat_n50 = statnx_len
+                    if n == 90:
+                        stat_n90 = statnx_len
+                
+                statnx_auc = sum(statnx_lens)
+                
+                # TODO Add analysis of ORF_lengths here
+                for i in range(len(statnxs)):
+                    nx_stats_out.write("\t".join(map(str, [sample, algo, statnxs[i], statnx_lens[i]])) + "\n")
+                
+                stats_out.write("\t".join(map(str,[sample, algo, statN, statTrimmedN, statSum, statMin, statMed, statMean, statMax, stat_n50, stat_n90, statnx_auc])) + "\n")
+            
+            # close files
+            stats_out.close()
+            nx_stats_out.close()   
+
+    def trimLens(self, lens, minLen):
+       """
+       Eliminates any reads below a certain threshold.  Function assumes that input
+       list lens is sorted smallest to largest.
+       """
+       index = 0
+       for i in range(len(lens)):
+           if lens[i] < minLen:
+               index += 1
+           else:
+               break
+    
+       return lens[index:len(lens)]
 
 
     def assemble_samples(self, samples, mp2_parsed_params, algos=None, paired=False):
 
         #TODO loop over assembly types
-
+        print "In assemble_samples"
         algos = ["spades", "idba-ud"]
-
         for sample in samples:
-            self.assemble_sample(sample, algos, paired=True)
+            self.assemble_sample(sample, samples[sample], algos, paired=True)
 
         exit()
 
@@ -265,9 +407,8 @@ metapaths_steps:COMPUTE_RPKM skip"""
         mp2_parsed_params = self.parseMp2Input(app_session)
 
         paired_samples = self.getSequencePairs(downloaded_files)
-
         self.assemble_samples(paired_samples, mp2_parsed_params, paired=True)
-
+        self.compute_assembly_statistics(paired_samples)
         # TODO check parameters for paired-end indicator
         self.createMp2ParameterFile(mp2_parsed_params)
 

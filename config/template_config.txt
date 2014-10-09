@@ -15,6 +15,8 @@ REFDBS '/BlastDBs'
 
 # Check the executables/ directory your operating system
 # e.g., Mac = Darwin
+SPADES_EXECUTABLE  'SPAdes-3.1.1-Linux/bin/spades.py'
+IDBAUD_EXECUTABLE  'idba-1.1.1/bin/idba_ud'
 FORMATDB_EXECUTABLE  'makeblastdb'
 BLASTP_EXECUTABLE  'blastp'
 BLASTN_EXECUTABLE  'blastn'
@@ -29,6 +31,7 @@ RPKM_EXECUTABLE      'rpkm'
 # This is the folder where the scripts folder of the MetaPathways  pipeline 
 # # is installed
 
+ASSEMBLE_READS     'libs/python_scripts/MetaPathways_assemble_reads.py'
 GBK_TO_FNA_FAA_GFF   'libs/python_scripts/MetaPathways_parse_genbank.py'
 GFF_TO_FNA_FAA_GFF   'libs/python_scripts/MetaPathways_input_gff.py'
 PREPROCESS_INPUT          'libs/python_scripts/MetaPathways_filter_input.py'
