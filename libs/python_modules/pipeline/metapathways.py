@@ -532,7 +532,7 @@ def checkMetapathsteps(params, runlogger = None):
      choices['INPUT']['format']  = ['fasta', 'gbk_unannotated', 'gbk_annotated', 'gff_unannotated', 'gff_annotated']
 
      choices['annotation']['algorithm'] =  ['last', 'blast'] 
-
+     choises['metapaths_steps']['ASSEMBLE_READS'] = ['yes', 'skip', 'stop', 'redo']
      choices['metapaths_steps']['PREPROCESS_FASTA']   = ['yes', 'skip', 'stop', 'redo']
      choices['metapaths_steps']['ORF_PREDICTION']  = ['yes', 'skip', 'stop', 'redo']
      choices['metapaths_steps']['GFF_TO_AMINO']    = ['yes', 'skip', 'stop', 'redo']

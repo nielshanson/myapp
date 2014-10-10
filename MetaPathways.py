@@ -207,6 +207,8 @@ def create_an_input_output_pair(input_file, output_dir, format, globalerrorlogge
     """ creates an input output pair if input is just an input file """
        
     input_output = {}
+    # truseqI1-8899-Name_S12_L001_R2_001.fastq.gz
+    illumina_pattern = re.compile("(.+)\_(.+)\_(.+)\_(.+)\_(.+)([\.fastq|\.fq])([\.gz|\.zip]?)$")
 
     if not re.search(r'.(fasta|fas|fna|faa|gbk|gff|fa)$',input_file, re.IGNORECASE):
        return input_output
@@ -215,14 +217,21 @@ def create_an_input_output_pair(input_file, output_dir, format, globalerrorlogge
     if format in ['gbk-unannotated', 'gbk-annotated']:
         shortname = re.sub('[.]gbk$','',input_file, re.IGNORECASE) 
     elif format =='fasta':
-        shortname = re.sub('[.](fasta|fas|fna|faa|fa)$','',input_file, re.IGNORECASE) 
+        shortname = re.sub('[.](fasta|fas|fna|faa|fa)$','',input_file, re.IGNORECASE)
+    elif format == 'fastq':
+        hits = illumina_pattern.search(input_file)
+        if hits:
+           # found illumina pattern
+           shortname = hits.group(1)
+        else:
+           shortname = re.sub('[.](fastq|fq)[\.gz]?$','',input_file, re.IGNORECASE)
     else:
         shortname = re.sub('[.]gff$','',input_file, re.IGNORECASE) 
 
     shortname = re.sub(r'.*' + PATHDELIM ,'',shortname) 
 
     check_for_error_in_input_file_name(shortname, globalerrorlogger=globalerrorlogger)
-
+     
     input_output[input_file] = path.abspath(output_dir) + PATHDELIM + shortname
 
     return input_output
@@ -360,10 +369,12 @@ def main(argv):
     """
 
     globalerrorlogger = WorkflowLogger(generate_log_fp(output_dir, basefile_name= 'global_errors_warnings'), open_mode='w') 
-
+    
     input_output_list = {}
+    # TODO: Check for illumina paired data... this complicates things a little. 
     if path.isfile(input_fp):   
        """ check if it is a file """
+       # TODO: Check for illumina pattern, if so check for pairs
        input_output_list = create_an_input_output_pair(input_fp, output_dir, format, globalerrorlogger = globalerrorlogger)
     else:
        if path.exists(input_fp):   

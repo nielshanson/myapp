@@ -117,7 +117,7 @@ class ContextCreator:
           contexts = []
 
           '''inputs'''
-          input_files = s.input_files
+          input_files = s.input_file
 
           '''outputs'''
           output_dir = s.assembly_dir + PATHDELIM + s.sample_name
