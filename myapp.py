@@ -2,6 +2,7 @@ import os
 import subprocess
 import re
 import gzip
+import shutil
 from libs.python_modules.parsers.fastareader import FastaRecord, FastaReader
 
 #post-processing code for RainMaker Report integration
@@ -134,6 +135,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
                        '-v', '-r', 'overlay']
         exe = subprocess.call( mp2_command )
         if exe != 0 : raise Exception("MetaPathways exited abnormally")
+        print "Returned!"
 
     def getSequencePairs(self, downloaded_files):
         paired_samples = {}
@@ -174,14 +176,14 @@ metapaths_steps:COMPUTE_RPKM skip"""
 
         root = os.path.dirname(os.path.realpath(__file__))
         # folder for resulting contigs
-        contigs_folder = os.path.join(root, "output", sample, "assembly", "final_contigs")
+        contigs_folder = os.path.join(root, "assemblies", sample, "assembly", "final_contigs")
         if not os.path.exists( contigs_folder ):
             os.makedirs( contigs_folder )
 
         if "spades" in algos:
 # spades_exe = os.path.join(root, "executables", "Darwin", "spades", "bin", "spades.py")
             spades_exe = os.path.join(root, "executables", "Unix", "SPAdes-3.1.1-Linux", "bin", "spades.py")
-            assemble_out = os.path.join(root, "output", sample, "assembly", "spades")
+            assemble_out = os.path.join(root, "assemblies", sample, "assembly", "spades")
             if not os.path.exists( assemble_out ) :
                 os.makedirs( assemble_out )
 
@@ -217,7 +219,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
 
             # output folder for results
             temp_fasta_file = "temp.fa"
-            assemble_out = os.path.join(root, "output", sample, "assembly", "idba-ud")
+            assemble_out = os.path.join(root, "assemblies", sample, "assembly", "idba-ud")
             if not os.path.exists( assemble_out ) :
                 os.makedirs( assemble_out )
             
@@ -314,7 +316,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
                 nxxLen = myLen
                 break
 
-        return nxx, nxxLen
+        return nxxLen
 
     def compute_assembly_statistics(self, paired_samples, min_length=20):
         
@@ -324,20 +326,25 @@ metapaths_steps:COMPUTE_RPKM skip"""
         root = os.path.dirname(os.path.realpath(__file__))
 
         for sample in paired_samples:
+
             # output
-            contigs_folder = os.path.join(root, "output", sample, "assembly", "final_contigs") 
+            contigs_folder = os.path.join(root, "assemblies", sample, "assembly", "final_contigs") 
             file_list = os.listdir(contigs_folder)
             nx_stats_out = open(os.path.join(contigs_folder, "assembly_stats_nx.txt"),"w")
             stats_out = open(os.path.join(contigs_folder, "assembly_stats.txt"),"w")
             nx_stats_out.write(header_nx)
             stats_out.write(header)
-    
+
             for f in file_list:
                 algo = "a1"
                 hits = re.search("(.*)\_contigs\.fasta",f)
 
                 if hits:
                    algo = hits.group(1)
+                else:
+                    print 'File ', f, ' not assembler file.'
+                    continue
+                 
                 lens = self.getLens(os.path.join(contigs_folder, f))
                 trimmedLens = self.trimLens(lens, min_length)
                 
@@ -355,7 +362,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
                 statnx_lens = []
                 
                 for n in range(5,96,5):
-                    statnx, statnx_len = self.nx(trimmedLens, n)
+                    statnx_len = self.nx(trimmedLens, n)
                     statnxs.append( str(n))
                     statnx_lens.append(statnx_len)
                     
@@ -374,7 +381,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
             
             # close files
             stats_out.close()
-            nx_stats_out.close()   
+            nx_stats_out.close() 
 
     def trimLens(self, lens, minLen):
        """
@@ -398,20 +405,83 @@ metapaths_steps:COMPUTE_RPKM skip"""
         algos = ["spades", "idba-ud"]
         for sample in samples:
             self.assemble_sample(sample, samples[sample], algos, paired=True)
+    
+    def select_winning_assembly(self, sample):
+        # output
+        root = os.path.dirname(os.path.realpath(__file__))
+        contigs_folder = os.path.join(root, "assemblies", sample, "assembly", "final_contigs") 
+        stats_file = open(os.path.join(contigs_folder, "assembly_stats.txt"),"r")
+        lines = stats_file.readlines()
+        headers = lines[0]
 
-        exit()
+        lengths = []
+        aucs = []
+        n50s = []
+        algorithms = []
+        for line in lines[1:]:
+            fields = line.split("\t")
+            sample = fields[0]
+            algorithm = fields[1]
+            n = fields[2]
+            n_trimmed = fields[3]
+            length = fields[4]
+            stat_min = fields[5]
+            stat_median = fields[6]
+            stat_mean = fields[7]
+            stat_max = fields[8]
+            stat_n50 = fields[9]
+            stat_n90 = fields[10]
+            stat_auc = fields[11]
+            
+            lengths.append(length)
+            aucs.append(stat_auc)
+            n50s.append(stat_n50)
+            algorithms.append(algorithm)
+        
+        length_winner = algorithms[lengths.index(max(lengths))]
+        auc_winner = algorithms[aucs.index(max(aucs))]
+        n50_winner = algorithms[n50s.index(max(n50s))]
 
+        vote_list = [length_winner, auc_winner, n50_winner]
+        max_votes = -1
+        max_candidate = None
+        for candidate in set(vote_list):
+            votes = vote_list.count(candidate)
+            if votes > max_votes:
+               max_candidate = candidate
+               max_votes = votes
+
+        return max_candidate
 
     def runApp( self, downloaded_files, app_session = None ) :
         upload_folders = []
         mp2_parsed_params = self.parseMp2Input(app_session)
-
         paired_samples = self.getSequencePairs(downloaded_files)
         self.assemble_samples(paired_samples, mp2_parsed_params, paired=True)
+        print "Calculating statistics"
         self.compute_assembly_statistics(paired_samples)
+        mp_input = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mp_input")
+        for sample in paired_samples:
+            best_assembly = self.select_winning_assembly(sample)
+            paired_samples[sample]["best_assembly"] = best_assembly
+            
+            if not os.path.exists(mp_input):
+               os.mkdir(mp_input)
+            
+            contigs_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assemblies", sample, "assembly", "final_contigs", best_assembly + "_contigs.fasta")
+            print contigs_file
+            print os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta")
+            shutil.copyfile(contigs_file, os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta"))
         # TODO check parameters for paired-end indicator
         self.createMp2ParameterFile(mp2_parsed_params)
-
+        
+         
+        output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mp_output")
+        config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config")
+        template_config = os.path.join(config, "template_config.txt")
+        template_param = os.path.join(config, "template_param.txt")
+        print "Calling MetaPathways!"
+        self.createSimpleMp2Command(mp_input, output_dir, template_config, template_param)
 
 
 
