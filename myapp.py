@@ -35,7 +35,11 @@ class MyApp( DockerApp ):
                     if i["Type"] == "string[]":
                         name = i["Name"].lstrip("Input.")
                         mp_parsed_params[name] = i["Items"]
-
+                    if i["Type"] == "sample[]":
+                        if i["Name"] not in mp_parsed_params:
+                            mp_parsed_params[i["Name"]] = []
+                        for j in i["Items"]:
+                            mp_parsed_params[i["Name"]].append(j["Name"])
         return mp_parsed_params
 
     def createMp2ParameterFile(self, mp2_parsed_params):
@@ -474,15 +478,48 @@ metapaths_steps:COMPUTE_RPKM skip"""
             shutil.copyfile(contigs_file, os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta"))
         # TODO check parameters for paired-end indicator
         self.createMp2ParameterFile(mp2_parsed_params)
-        
+         
          
         output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mp_output")
         config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config")
         template_config = os.path.join(config, "template_config.txt")
         template_param = os.path.join(config, "template_param.txt")
-        print "Calling MetaPathways!"
-        self.createSimpleMp2Command(mp_input, output_dir, template_config, template_param)
+        
+        # create output folder
+        appresults_dir = "/data/output/appresults/"
+        project_id_dir = os.path.join(appresults_dir, self.project_id)
+        sample_dir = os.path.join( project_id_dir, mp2_parsed_params['Input.Samples'][0].replace(" ","_") ) 
+        r_output_dir = os.path.join(sample_dir , "r_output")
+        if not os.path.exists(appresults_dir):
+            os.mkdir(appresults_dir)
+        if not os.path.exists(project_id_dir):
+            os.mkdir(project_id_dir)
+        if not os.path.exists(sample_dir):
+            os.mkdir(sample_dir)
+        if not os.path.exists(r_output_dir):
+            os.mkdir(r_output_dir)
 
+        # compute nx graph
+        r_command = ["Rscript", "/home/apps/myapp/lib/nx_plot.R", "/home/apps/myapp/assemblies/truseqI1-8899-Name_S12_L001_001/assembly/final_contigs/assembly_stats_nx.txt", \
+                     "/tmp/nx_contigs.png" ]
+        res = subprocess.call(r_command)
+        if res == 0:
+            print "Rcommand Success!"
+        
+        if os.path.exists("/tmp/nx_contigs.png"):
+            print "Plot created!"
+        # res = subprocess.call(["mv", "/tmp/nx_contigs.png", "/data/output/appresults/12345/r_output/nx_contigs.png" ])
+        shutil.move("/tmp/nx_contigs.png", r_output_dir + "/nx_contigs.png")
+        if os.path.exists(r_output_dir + "/nx_contigs.png"):
+            print "Move successful!"
+         
+        # mv R result from /tmp to /data/output/appresults/12345/r_output/nx_contigs.png
+        
+
+# print "Calling MetaPathways!"
+        # self.createSimpleMp2Command(mp_input, output_dir, template_config, template_param)
+        
+        
 
 
 

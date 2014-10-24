@@ -5,7 +5,7 @@ import json
 
 UROOT = "/data/output/appresults/"
 DROOT = "/data/input/samples/"
-APPSESSION = "/data/input/TestAppSession.json"
+APPSESSION = "/data/input/AppSession.json"
 
 #A base class which handles download, execution and upload
 #By inheriting, the child app can supply the details of the app's execution
@@ -46,6 +46,7 @@ class DockerApp :
             (head, ar_name) = os.path.split( upload_folder )
             target = os.path.join( UROOT, self.project_id )
             shutil.move( upload_folder, os.path.join( target, ar_name ) )
+
     def parseAppSession( self ) :
         print "In parseAppSession:"
         fh = open(APPSESSION, "r")
