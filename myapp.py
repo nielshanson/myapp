@@ -131,7 +131,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
 
     def createSimpleMp2Command(self, input, output, config, param):
 
-        mp2_command = ['python', 'MetaPathways.py',\
+        mp2_command = ['python', '/home/apps/myapp/MetaPathways.py',\
                        '-i', input,
                        '-o', output,
                        '-c', config,
@@ -461,10 +461,12 @@ metapaths_steps:COMPUTE_RPKM skip"""
         upload_folders = []
         mp2_parsed_params = self.parseMp2Input(app_session)
         paired_samples = self.getSequencePairs(downloaded_files)
-        self.assemble_samples(paired_samples, mp2_parsed_params, paired=True)
+# self.assemble_samples(paired_samples, mp2_parsed_params, paired=True)
         print "Calculating statistics"
+        app_root = os.path.dirname(os.path.realpath(__file__))
         self.compute_assembly_statistics(paired_samples)
-        mp_input = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mp_input")
+        mp_input = os.path.join(app_root, "mp_input")
+        mp_input_assembly = None
         for sample in paired_samples:
             best_assembly = self.select_winning_assembly(sample)
             paired_samples[sample]["best_assembly"] = best_assembly
@@ -472,53 +474,86 @@ metapaths_steps:COMPUTE_RPKM skip"""
             if not os.path.exists(mp_input):
                os.mkdir(mp_input)
             
-            contigs_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assemblies", sample, "assembly", "final_contigs", best_assembly + "_contigs.fasta")
+            contigs_file = os.path.join(app_root, "assemblies", sample, "assembly", "final_contigs", best_assembly + "_contigs.fasta")
             print contigs_file
-            print os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta")
+            mp_input_assembly = os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta")
             shutil.copyfile(contigs_file, os.path.join(mp_input, sample + "_" + best_assembly + "_contigs.fasta"))
-        # TODO check parameters for paired-end indicator
+        
+        if not mp_input_assembly:
+            print "mp_input_assembly is None... Bail!"
+            exit()
+
         self.createMp2ParameterFile(mp2_parsed_params)
          
          
-        output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mp_output")
-        config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config")
+        output_dir = os.path.join(app_root, "mp_output")
+        config = os.path.join(app_root, "config")
         template_config = os.path.join(config, "template_config.txt")
         template_param = os.path.join(config, "template_param.txt")
         
         # create output folder
         appresults_dir = "/data/output/appresults/"
-        project_id_dir = os.path.join(appresults_dir, self.project_id)
-        sample_dir = os.path.join( project_id_dir, mp2_parsed_params['Input.Samples'][0].replace(" ","_") ) 
-        r_output_dir = os.path.join(sample_dir , "r_output")
         if not os.path.exists(appresults_dir):
-            os.mkdir(appresults_dir)
-        if not os.path.exists(project_id_dir):
-            os.mkdir(project_id_dir)
-        if not os.path.exists(sample_dir):
-            os.mkdir(sample_dir)
-        if not os.path.exists(r_output_dir):
-            os.mkdir(r_output_dir)
+            os.makedirs(appresults_dir)
+        
+        project_id_dir = os.path.join(appresults_dir, self.project_id)
+        for sample in paired_samples:
+            sample_name = sample.replace(" ","_")
+            sample_dir = os.path.join( project_id_dir, sample_name ) 
+            r_output_dir = os.path.join(sample_dir , "r_output")
+            
+            if not os.path.exists(r_output_dir):
+                os.makedirs(r_output_dir)
+            final_contigs_dir = os.path.join(app_root, "assemblies", sample_name, "/assembly/final_contigs/")
+            final_contigs_dir = "/".join([app_root, "assemblies", sample_name, "/assembly/final_contigs/"])
+            # compute nx graph
+            r_command = ["Rscript", \
+                        os.path.join(app_root, "lib/nx_plot.R"), \
+                        os.path.join(final_contigs_dir, "assembly_stats_nx.txt"),
+                        r_output_dir + "/nx_contigs.png" ]
+            print r_command 
+            res = subprocess.call(r_command)
+            if res == 0:
+                print "Rcommand Success!"
+            
+            
+            # move contig stats table
+            res = shutil.move(os.path.join(final_contigs_dir, "assembly_stats.txt"),\
+                            os.path.join(r_output_dir, "assembly_stats.tsv"))
 
-        # compute nx graph
-        r_command = ["Rscript", "/home/apps/myapp/lib/nx_plot.R", "/home/apps/myapp/assemblies/truseqI1-8899-Name_S12_L001_001/assembly/final_contigs/assembly_stats_nx.txt", \
-                     "/tmp/nx_contigs.png" ]
+            
+        self.createSimpleMp2Command(mp_input, output_dir, template_config, template_param)
+        mp_sample = os.path.basename(mp_input_assembly).replace(".fasta","")
+
+        file_list = os.listdir(os.path.join(output_dir, mp_sample, "run_statistics"))
+        orf_lengths_file = None
+        contig_lengths_file = None
+        print file_list
+        for file in file_list:
+            if re.match(".*\.orf\.lengths\.txt", file):
+                orf_lengths_file = file
+            elif re.match(".*\.contig\.lengths\.txt", file):
+                contig_lengths_file = file
+    
+        print orf_lengths_file
+        print contig_lengths_file
+        # run new R command
+        r_command = ["Rscript", \
+                        os.path.join(app_root, "lib/histogram_plot.R"), \
+                        os.path.join(output_dir, mp_sample,  "run_statistics", contig_lengths_file),\
+                        r_output_dir + "/contig_lengths.png" ]
         res = subprocess.call(r_command)
-        if res == 0:
-            print "Rcommand Success!"
         
-        if os.path.exists("/tmp/nx_contigs.png"):
-            print "Plot created!"
-        # res = subprocess.call(["mv", "/tmp/nx_contigs.png", "/data/output/appresults/12345/r_output/nx_contigs.png" ])
-        shutil.move("/tmp/nx_contigs.png", r_output_dir + "/nx_contigs.png")
-        if os.path.exists(r_output_dir + "/nx_contigs.png"):
-            print "Move successful!"
-         
-        # mv R result from /tmp to /data/output/appresults/12345/r_output/nx_contigs.png
+        r_command = ["Rscript", \
+                        os.path.join(app_root, "lib/histogram_plot.R"), \
+                        os.path.join(output_dir, mp_sample,  "run_statistics", orf_lengths_file),\
+                        r_output_dir + "/orf_lengths.png" ]
+        res = subprocess.call(r_command)
         
-
-# print "Calling MetaPathways!"
+          
+        # print "Calling MetaPathways!"
         # self.createSimpleMp2Command(mp_input, output_dir, template_config, template_param)
-        
+         
         
 
 
@@ -537,7 +572,7 @@ metapaths_steps:COMPUTE_RPKM skip"""
 
 
 
-            output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output")
+            output_dir = os.path.join(os.path.dirname(me), "output")
             config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config")
             template_config = os.path.join(config, "template_config.txt")
             template_param = os.path.join(config, "template_param.txt")
